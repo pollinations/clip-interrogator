@@ -1,22 +1,22 @@
 import sys
 
 sys.path.append("src/clip")
-sys.path.append("src/blip")
+# sys.path.append("src/blip")
 
-import os
 import hashlib
 import math
-import numpy as np
+import os
 import pickle
-from tqdm import tqdm
-from PIL import Image
+
+import clip
+import numpy as np
 import torch
+from cog import BasePredictor, Input, Path
+# from models.blip import blip_decoder
+from PIL import Image
 from torchvision import transforms
 from torchvision.transforms.functional import InterpolationMode
-import clip
-from models.blip import blip_decoder
-from cog import BasePredictor, Input, Path
-
+from tqdm import tqdm
 
 DATA_PATH = "data"
 chunk_size = 2048
@@ -30,15 +30,15 @@ class Predictor(BasePredictor):
 
         self.device = "cuda:0"
 
-        print("Loading BLIP model...")
-        self.blip_model = blip_decoder(
-            pretrained="weights/model_large_caption.pth",  # downloaded with wget https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_large_caption.pth
-            image_size=blip_image_eval_size,
-            vit="large",
-            med_config="src/blip/configs/med_config.json",
-        )
-        self.blip_model.eval()
-        self.blip_model = self.blip_model.to(self.device)
+        # print("Loading BLIP model...")
+        # self.blip_model = blip_decoder(
+        #     pretrained="weights/model_large_caption.pth",  # downloaded with wget https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_large_caption.pth
+        #     image_size=blip_image_eval_size,
+        #     vit="large",
+        #     med_config="src/blip/configs/med_config.json",
+        # )
+        # self.blip_model.eval()
+        # self.blip_model = self.blip_model.to(self.device)
 
         print("Loading CLIP model...")
         self.clip_models, self.clip_preprocess = {}, {}
@@ -59,30 +59,6 @@ class Predictor(BasePredictor):
             ) = clip.load(clip_model_name, device=self.device)
             self.clip_models[clip_model_name].cuda().eval()
 
-        sites = [
-            "Artstation",
-            "behance",
-            "cg society",
-            "cgsociety",
-            "deviantart",
-            "dribble",
-            "flickr",
-            "instagram",
-            "pexels",
-            "pinterest",
-            "pixabay",
-            "pixiv",
-            "polycount",
-            "reddit",
-            "shutterstock",
-            "tumblr",
-            "unsplash",
-            "zbrush central",
-        ]
-        self.trending_list = [site for site in sites]
-        self.trending_list.extend(["trending on " + site for site in sites])
-        self.trending_list.extend(["featured on " + site for site in sites])
-        self.trending_list.extend([site + " contest winner" for site in sites])
         raw_artists = load_list(f"{DATA_PATH}/artists.txt")
         self.artists = [f"by {a}" for a in raw_artists]
         self.artists.extend([f"inspired by {a}" for a in raw_artists])
@@ -110,42 +86,42 @@ class Predictor(BasePredictor):
         clip_model = self.clip_models[clip_model_name]
         clip_preprocess = self.clip_preprocess[clip_model_name]
 
-        artists = LabelTable(self.artists, "artists", clip_model_name, clip_model)
-        flavors = LabelTable(
-            load_list(f"{DATA_PATH}/flavors.txt"),
-            "flavors",
+        # artists = LabelTable(self.artists, "artists", clip_model_name, clip_model)
+        ethnicities = LabelTable(
+            load_list(f"{DATA_PATH}/ethnicities.txt"),
+            "ethnicities",
             clip_model_name,
             clip_model,
         )
-        mediums = LabelTable(
-            load_list(f"{DATA_PATH}/mediums.txt"),
-            "mediums",
+        genders = LabelTable(
+            load_list(f"{DATA_PATH}/genders.txt"),
+            "genders",
             clip_model_name,
             clip_model,
         )
-        movements = LabelTable(
-            load_list(f"{DATA_PATH}/movements.txt"),
-            "movements",
-            clip_model_name,
-            clip_model,
-        )
-        trendings = LabelTable(
-            self.trending_list, "trendings", clip_model_name, clip_model
-        )
+        # movements = LabelTable(
+        #     load_list(f"{DATA_PATH}/movements.txt"),
+        #     "movements",
+        #     clip_model_name,
+        #     clip_model,
+        # )
+        # trendings = LabelTable(
+        #     self.trending_list, "trendings", clip_model_name, clip_model
+        # )
 
         image = Image.open(str(image)).convert("RGB")
 
-        labels = [flavors, mediums, artists, trendings, movements]
+        labels = [genders, ethnicities]
 
         prompt = interrogate(
             image,
             clip_model_name,
             clip_preprocess,
             clip_model,
-            self.blip_model,
+            # self.blip_model,
             *labels,
         )
-
+        print("determined prompt", prompt)
         return prompt
 
 
@@ -223,30 +199,30 @@ class LabelTable:
         return [top_labels[i] for i in tops]
 
 
-def generate_caption(pil_image, blip_model, device="cuda"):
-    gpu_image = (
-        transforms.Compose(
-            [
-                transforms.Resize(
-                    (blip_image_eval_size, blip_image_eval_size),
-                    interpolation=InterpolationMode.BICUBIC,
-                ),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    (0.48145466, 0.4578275, 0.40821073),
-                    (0.26862954, 0.26130258, 0.27577711),
-                ),
-            ]
-        )(pil_image)
-        .unsqueeze(0)
-        .to(device)
-    )
+# def generate_caption(pil_image, device="cuda"):
+#     gpu_image = (
+#         transforms.Compose(
+#             [
+#                 transforms.Resize(
+#                     (blip_image_eval_size, blip_image_eval_size),
+#                     interpolation=InterpolationMode.BICUBIC,
+#                 ),
+#                 transforms.ToTensor(),
+#                 transforms.Normalize(
+#                     (0.48145466, 0.4578275, 0.40821073),
+#                     (0.26862954, 0.26130258, 0.27577711),
+#                 ),
+#             ]
+#         )(pil_image)
+#         .unsqueeze(0)
+#         .to(device)
+#     )
 
-    with torch.no_grad():
-        caption = blip_model.generate(
-            gpu_image, sample=False, num_beams=3, max_length=20, min_length=5
-        )
-    return caption[0]
+#     with torch.no_grad():
+#         caption = blip_model.generate(
+#             gpu_image, sample=False, num_beams=3, max_length=20, min_length=5
+#         )
+#     return caption[0]
 
 
 def rank_top(image_features, text_array, clip_model, device="cuda"):
@@ -278,64 +254,35 @@ def load_list(filename):
     return items
 
 
-def interrogate(image, clip_model_name, clip_preprocess, clip_model, blip_model, *args):
-    flavors, mediums, artists, trendings, movements = args
-    caption = generate_caption(image, blip_model)
+def interrogate(image, clip_model_name, clip_preprocess, clip_model, *args):
+    genders, ethnicities = args
+    # caption = generate_caption(image, blip_model)
 
     images = clip_preprocess(image).unsqueeze(0).cuda()
     with torch.no_grad():
         image_features = clip_model.encode_image(images).float()
     image_features /= image_features.norm(dim=-1, keepdim=True)
 
-    flaves = flavors.rank(image_features, flavor_intermediate_count)
-    best_medium = mediums.rank(image_features, 1)[0]
-    best_artist = artists.rank(image_features, 1)[0]
-    best_trending = trendings.rank(image_features, 1)[0]
-    best_movement = movements.rank(image_features, 1)[0]
+    # flaves = genders.rank(image_features, flavor_intermediate_count)
+    best_ethnicity = ethnicities.rank(image_features, 1)[0]
+    best_gender = genders.rank(image_features, 1)[0]
+    # best_trending = trendings.rank(image_features, 1)[0]
+    # best_movement = movements.rank(image_features, 1)[0]
 
-    best_prompt = caption
-    best_sim = similarity(image_features, best_prompt, clip_model)
-
-    def check(addition):
-        nonlocal best_prompt, best_sim
-        prompt = best_prompt + ", " + addition
-        sim = similarity(image_features, prompt, clip_model)
-        if sim > best_sim:
-            best_sim = sim
-            best_prompt = prompt
-            return True
-        return False
-
-    def check_multi_batch(opts):
-        nonlocal best_prompt, best_sim
-        prompts = []
-        for i in range(2 ** len(opts)):
-            prompt = best_prompt
-            for bit in range(len(opts)):
-                if i & (1 << bit):
-                    prompt += ", " + opts[bit]
-            prompts.append(prompt)
-
-        t = LabelTable(prompts, None, clip_model_name, clip_model)
-        best_prompt = t.rank(image_features, 1)[0]
-        best_sim = similarity(image_features, best_prompt, clip_model)
-
-    check_multi_batch([best_medium, best_artist, best_trending, best_movement])
-
-    extended_flavors = set(flaves)
-    for _ in tqdm(range(25), desc="Flavor chain"):
-        try:
-            best = rank_top(
-                image_features,
-                [f"{best_prompt}, {f}" for f in extended_flavors],
-                clip_model,
-            )
-            flave = best[len(best_prompt) + 2 :]
-            if not check(flave):
-                break
-            extended_flavors.remove(flave)
-        except:
-            # exceeded max prompt length
-            break
+    best_prompt = f"{best_gender} {best_ethnicity}"
+    # for _ in tqdm(range(25), desc="Flavor chain"):
+    #     try:
+    #         best = rank_top(
+    #             image_features,
+    #             [f"{best_prompt}, {f}" for f in extended_flavors],
+    #             clip_model,
+    #         )
+    #         flave = best[len(best_prompt) + 2 :]
+    #         if not check(flave):
+    #             break
+    #         extended_flavors.remove(flave)
+    #     except:
+    #         # exceeded max prompt length
+    #         break
 
     return best_prompt
